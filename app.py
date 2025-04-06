@@ -3,6 +3,7 @@ import pickle
 import librosa
 import numpy as np
 from flask import Flask, request, jsonify
+from pydub import AudioSegment
 
 # Load the trained model, scaler, and labels
 MODEL_FILE = "voice_auth_model.pkl"
@@ -34,16 +35,31 @@ def authenticate_user():
     file = request.files["file"]
     user = request.form["user"]
 
-    # Save the uploaded file temporarily
-    file_path = "temp.wav"
-    file.save(file_path)
+    # Save uploaded file (assume it's m4a)
+    uploaded_path = "temp_uploaded.m4a"
+    file.save(uploaded_path)
+
+    # Convert to .wav
+    converted_path = "temp.wav"
+    try:
+        audio = AudioSegment.from_file(uploaded_path, format="m4a")
+        audio.export(converted_path, format="wav")
+    except Exception as e:
+        os.remove(uploaded_path)
+        return jsonify({"error": f"Failed to convert audio: {str(e)}"}), 500
 
     # Extract features and classify
-    features = extract_features(file_path)
-    features = scaler.transform([features])
-    predicted_label = model.predict(features)[0]
+    try:
+        features = extract_features(converted_path)
+        features = scaler.transform([features])
+        predicted_label = model.predict(features)[0]
+    except Exception as e:
+        os.remove(uploaded_path)
+        os.remove(converted_path)
+        return jsonify({"error": f"Feature extraction failed: {str(e)}"}), 500
 
-    os.remove(file_path)  # Clean up
+    os.remove(uploaded_path)
+    os.remove(converted_path)
 
     # Check if the predicted label matches the requested user
     for label_name, label_id in labels.items():
